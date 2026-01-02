@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Mapa MEF 2026 – Descarga de listados</title>
+  
+  <!-- METADATOS NATIVOS -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#1e293b" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts: Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Iconos -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    /* ESTILOS BASE */
+    body { 
+        font-family: 'Inter', sans-serif; 
+        overscroll-behavior-y: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    input { user-select: text; }
+    
+    .custom-scroll::-webkit-scrollbar { width: 4px; }
+    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+    .custom-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
+    
+    #map { z-index: 0; height: 100vh; width: 100vw; position: fixed; top: 0; left: 0; }
+    
+    /* ANIMACIONES DEL PANEL */
+    .panel-hidden { transform: translateX(-100%); opacity: 0; pointer-events: none; }
+    .panel-visible { transform: translateX(0); opacity: 1; pointer-events: auto; }
+
+    /* Estilos del Popup Leaflet */
+    .leaflet-popup-content-wrapper {
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        padding: 0;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+    }
+    .leaflet-popup-content { margin: 0; width: 260px !important; }
+    .leaflet-popup-tip { box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+    .leaflet-container a.leaflet-popup-close-button { display: none; }
+    
+    /* Controles de Zoom */
+    .leaflet-control-zoom { z-index: 9999 !important; border: none !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important; }
+    .leaflet-bar a { border-radius: 8px !important; width: 36px !important; height: 36px !important; line-height: 36px !important; margin-bottom: 4px !important; color: #475569 !important; font-weight: bold !important; }
+  </style>
+</head>
+
+<body class="bg-gray-100 overflow-hidden relative h-screen w-screen">
+
+  <!-- BOTÓN LATERAL (ABRIR/CERRAR) -->
+  <button id="toggleSideBtn" class="absolute left-0 top-1/2 transform -translate-y-1/2 z-[2000] bg-white text-blue-700 w-8 h-20 rounded-r-xl shadow-xl border-y border-r border-gray-300 flex items-center justify-center hover:bg-blue-50 transition-all duration-300">
+    <i id="toggleIcon" class="fa-solid fa-chevron-left text-lg"></i>
+  </button>
+
+  <!-- CONTENEDOR UI -->
+  <div id="uiContainer" class="absolute inset-0 z-[1000] pointer-events-none flex flex-col justify-start items-start transition-all duration-300 md:justify-center md:p-4 md:w-[450px]">
+    
+    <!-- PANEL PRINCIPAL (SIDEBAR) -->
+    <!-- 
+         Cambios Móvil:
+         - h-[100dvh]: Altura dinámica exacta del viewport móvil (soluciona corte inferior).
+         - rounded-none md:rounded-2xl: Bordes rectos en móvil para llenar pantalla verticalmente.
+    -->
+    <div id="mainPanel" class="panel-visible pointer-events-auto bg-white/95 backdrop-blur-md shadow-[10px_0_40px_rgba(0,0,0,0.2)] md:shadow-2xl rounded-r-2xl md:rounded-2xl flex flex-col w-[85vw] md:w-full h-[100dvh] md:h-[98%] border-r border-t border-b border-white/20 overflow-hidden transition-all duration-500 ease-in-out">
+      
+      <!-- HEADER -->
+      <div class="bg-slate-50/80 p-5 border-b border-gray-200 shrink-0">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-[10px] font-bold text-blue-600 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded">R.M. N° 514-2025-EF/15</span>
+        </div>
+        <h1 class="text-2xl font-extrabold text-slate-800 leading-none mb-0.5">Valores Arancelarios</h1>
+        <h2 class="text-lg font-bold text-slate-600 leading-tight">Mapa MEF 2026</h2>
+        
+        <!-- BUSCADOR -->
+        <div class="mt-4 relative group">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i class="fa-solid fa-magnifying-glass text-slate-400 group-focus-within:text-blue-500 transition-colors"></i>
+            </div>
+            <input id="q" type="text" 
+                class="block w-full pl-10 pr-10 py-3 bg-white border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none appearance-none transition-all" 
+                placeholder="Buscar Distrito o Ubigeo (Ej: 150101)" />
+            
+            <button id="btnClear" class="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer text-slate-300 hover:text-slate-500 transition-colors hidden">
+                <i class="fa-solid fa-circle-xmark"></i>
+            </button>
+        </div>
+      </div>
+
+      <!-- LISTA DE RESULTADOS -->
+      <div id="results" class="flex-1 overflow-y-auto custom-scroll p-4 space-y-2 bg-slate-50/50">
+        <div class="text-center py-10 opacity-50">
+            <div class="bg-white rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-3 shadow-sm">
+                <i class="fa-solid fa-map-location-dot text-slate-300 text-2xl"></i>
+            </div>
+            <p class="text-sm font-semibold text-slate-400">Explora el mapa o busca un distrito</p>
+        </div>
+      </div>
+
+      <!-- FOOTER NEGRO -->
+      <!-- 'pb-6 md:pb-4' agrega padding extra abajo en móvil para evitar zonas táctiles del sistema -->
+      <div class="bg-black text-white shrink-0 p-4 pb-8 md:pb-4 border-t border-gray-800 z-20 flex flex-col items-center justify-center gap-3">
+          <p class="text-[10px] font-bold text-gray-400 tracking-wide">Desarrollado por Lab Urban Risk</p>
+          
+          <div class="flex items-center gap-6">
+               <!-- Icono Valoración -->
+               <a href="https://musucancha-rgb.github.io/PERU.Valor_edificacion/" target="_blank" class="text-orange-500 hover:text-orange-400 transition-transform transform hover:scale-110" title="Valorar Edificación"><i class="fa-solid fa-calculator text-xl"></i></a>
+               
+               <a href="https://youtube.com/@laburbanrisk?si=COqNXDTX7TAQSqDO" target="_blank" class="text-red-500 hover:text-red-400 transition-transform transform hover:scale-110"><i class="fa-brands fa-youtube text-xl"></i></a>
+               <a href="https://www.facebook.com/share/1Db3ZgmTE4/?mibextid=wwXIfr" target="_blank" class="text-blue-600 hover:text-blue-500 transition-transform transform hover:scale-110"><i class="fa-brands fa-facebook text-xl"></i></a>
+               <a href="https://www.instagram.com/laburbanrisk?igsh=MWNzam53enpzZng4Ng%3D%3D&utm_source=qr" target="_blank" class="text-pink-500 hover:text-pink-400 transition-transform transform hover:scale-110"><i class="fa-brands fa-instagram text-xl"></i></a>
+               <a href="https://www.tiktok.com/@laburbanrisk?_r=1&_t=ZN-92idJVeblZe" target="_blank" class="text-white hover:text-gray-300 transition-transform transform hover:scale-110"><i class="fa-brands fa-tiktok text-xl"></i></a>
+          </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // --- 1. CONFIGURACIÓN DEL MAPA ---
+    const map = L.map("map", { 
+        zoomControl: false 
+    }).setView([-12.0464, -77.0428], 11); 
+    
+    // Zoom top-right
+    L.control.zoom({ position: 'topright' }).addTo(map);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; Lab Urban Risk',
+        subdomains: 'abcd',
+        maxZoom: 20
+    }).addTo(map);
+
+    // --- 2. GESTIÓN DEL PANEL (SIDEBAR) ---
+    const mainPanel = document.getElementById('mainPanel');
+    const toggleSideBtn = document.getElementById('toggleSideBtn');
+    const toggleIcon = document.getElementById('toggleIcon');
+    const uiContainer = document.getElementById('uiContainer');
+    
+    let isPanelOpen = true;
+
+    // Ajuste inicial para mobile (cerrado) vs desktop (abierto)
+    if (window.innerWidth < 768) {
+        togglePanel(false);
+    }
+
+    function togglePanel(forceState) {
+        if (typeof forceState === 'boolean') {
+            isPanelOpen = forceState;
+        } else {
+            isPanelOpen = !isPanelOpen;
+        }
+
+        if (isPanelOpen) {
+            mainPanel.classList.remove('panel-hidden');
+            mainPanel.classList.add('panel-visible');
+            toggleIcon.className = "fa-solid fa-chevron-left text-lg";
+            uiContainer.classList.remove('pointer-events-none');
+        } else {
+            mainPanel.classList.remove('panel-visible');
+            mainPanel.classList.add('panel-hidden');
+            toggleIcon.className = "fa-solid fa-chevron-right text-lg";
+            uiContainer.classList.add('pointer-events-none');
+        }
+    }
+
+    toggleSideBtn.addEventListener('click', () => togglePanel());
+
+    // --- 3. ESTILOS Y SELECCIÓN VISUAL ---
+    let selectedLayer = null;
+
+    function style(feature) {
+      return {
+        color: "#3b82f6",
+        weight: 1, 
+        opacity: 1,
+        fillColor: "#60a5fa",
+        fillOpacity: 0.1
+      };
+    }
+
+    function highlightStyle() {
+        return {
+            weight: 2, 
+            color: '#0047FF', 
+            fillColor: '#0047FF', 
+            fillOpacity: 0.8      
+        };
+    }
+
+    function resetHighlight(e) {
+      if (e.target !== selectedLayer) {
+        geojson.resetStyle(e.target);
+      }
+    }
+
+    function highlightFeature(e) {
+      const layer = e.target;
+      layer.setStyle(highlightStyle());
+      if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+        layer.bringToFront();
+      }
+    }
+
+    // --- 4. LÓGICA DE DATOS ---
+    let geojson;
+    let featuresIndex = []; 
+    const resultsEl = document.getElementById("results");
+    const qEl = document.getElementById("q");
+    const btnClear = document.getElementById("btnClear");
+
+    function getDistrictName(props) {
+        return props.distrito || props.dist || props.NOMBDIST || props.NOMB_DIST || props.name || "Distrito Desconocido";
+    }
+
+    function normalizeText(text) {
+        return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    }
+
+    // --- POPUP MINIMALISTA ---
+    function popupHtml(p) {
+      const distrito = getDistrictName(p);
+      const ubigeo = p.ubigeo || p.UBIGEO || "---";
+      
+      return `
+        <div class="font-sans relative">
+            <button onclick="map.closePopup()" class="absolute top-3 right-3 z-50 text-white/80 hover:text-white bg-black/20 hover:bg-black/40 p-1.5 rounded-full transition-colors w-8 h-8 flex items-center justify-center">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+
+            <div class="bg-slate-800 text-white p-5 pr-10">
+                <h3 class="font-bold text-lg leading-tight mb-1 pr-2">${distrito}</h3>
+                <span class="inline-block bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded tracking-wide">UBIGEO: ${ubigeo}</span>
+            </div>
+            <div class="h-2 bg-gradient-to-b from-slate-800/10 to-transparent"></div>
+        </div>
+      `;
+    }
+
+    function selectFeature(layer) {
+        if (selectedLayer && selectedLayer !== layer) {
+            geojson.resetStyle(selectedLayer);
+        }
+        
+        selectedLayer = layer;
+        layer.setStyle(highlightStyle());
+        layer.bringToFront();
+        
+        map.flyToBounds(layer.getBounds(), { padding: [50, 50], maxZoom: 13, duration: 1.2 });
+        layer.openPopup();
+        
+        // En móvil, contraer panel al seleccionar
+        if (window.innerWidth < 768) {
+            togglePanel(false);
+        }
+    }
+
+    function onEachFeature(feature, layer) {
+      layer.bindPopup(popupHtml(feature.properties || {}));
+
+      layer.on({
+        mouseover: highlightFeature,
+        mouseout: resetHighlight,
+        click: (e) => {
+            L.DomEvent.stopPropagation(e);
+            selectFeature(layer);
+        }
+      });
+
+      const p = feature.properties || {};
+      const rawName = getDistrictName(p);
+      
+      featuresIndex.push({
+        feature,
+        layer,
+        nameDisplay: rawName,
+        nameSearch: normalizeText(rawName),
+        ubigeo: String(p.ubigeo || p.UBIGEO || ""),
+        zipUrl: String(p.mef_zip_url || "")
+      });
+    }
+
+    // --- 5. RESULTADOS ---
+    function renderResults(list) {
+      if (!list.length) {
+        resultsEl.innerHTML = `
+            <div class="text-center py-8">
+                <p class="text-sm font-semibold text-slate-400">No se encontraron resultados</p>
+            </div>`;
+        return;
+      }
+
+      resultsEl.innerHTML = list.slice(0, 50).map(item => { 
+        const hasZip = !!item.zipUrl;
+        
+        return `
+          <div class="group flex justify-between items-center p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 hover:shadow-md transition-all duration-200 cursor-pointer" 
+               data-ubigeo="${item.ubigeo}">
+            
+            <!-- Info (Click para ir al mapa) -->
+            <div class="flex-1" onclick="handleResultClick('${item.ubigeo}')">
+                <div class="font-bold text-slate-700 text-sm mb-0.5">${item.nameDisplay}</div>
+                <div class="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+                    <i class="fa-solid fa-barcode text-[10px]"></i> ${item.ubigeo}
+                </div>
+            </div>
+
+            <!-- Botón Descarga (Lateral) -->
+            ${hasZip ? 
+                `<a href="${item.zipUrl}" target="_blank" rel="noopener noreferrer"
+                    onclick="event.stopPropagation()"
+                    class="ml-3 flex items-center justify-center w-10 h-10 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all border border-blue-100 group-hover:border-blue-200"
+                    title="Descargar ZIP">
+                    <i class="fa-solid fa-download"></i>
+                 </a>` : 
+                `<div class="ml-3 flex items-center justify-center w-10 h-10 bg-slate-50 text-slate-300 rounded-lg border border-slate-100">
+                    <i class="fa-solid fa-ban"></i>
+                 </div>`
+            }
+          </div>
+        `;
+      }).join("");
+    }
+
+    window.handleResultClick = function(ubigeo) {
+        const found = featuresIndex.find(x => x.ubigeo === ubigeo);
+        if (found) {
+            selectFeature(found.layer);
+        }
+    };
+
+    // --- 6. BUSCADOR ---
+    function doSearch() {
+      const rawQ = (qEl.value || "").trim();
+      const q = normalizeText(rawQ); 
+      
+      if(rawQ.length > 0) btnClear.classList.remove('hidden');
+      else btnClear.classList.add('hidden');
+
+      if (!q) {
+        resultsEl.innerHTML = `
+            <div class="text-center py-10 opacity-50">
+                <div class="bg-white rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-3 shadow-sm">
+                    <i class="fa-solid fa-map-location-dot text-slate-300 text-2xl"></i>
+                </div>
+                <p class="text-sm font-semibold text-slate-400">Explora el mapa o busca un distrito</p>
+            </div>`;
+        return;
+      }
+
+      const isUbigeoQuery = /^[0-9]+$/.test(q); 
+      const filtered = featuresIndex.filter(x => {
+        if (isUbigeoQuery) return x.ubigeo.startsWith(q);
+        return x.nameSearch.includes(q); 
+      });
+
+      renderResults(filtered);
+    }
+
+    qEl.addEventListener("input", doSearch);
+    btnClear.addEventListener("click", () => {
+      qEl.value = "";
+      doSearch();
+      qEl.focus();
+    });
+
+    // --- 7. CARGA DE DATOS ---
+    fetch("distritos_mef_2026_con_zip.geojson")
+      .then(r => {
+          if (!r.ok) throw new Error("No se encontró archivo local");
+          return r.json();
+      })
+      .then(data => {
+        geojson = L.geoJSON(data, { style, onEachFeature }).addTo(map);
+        map.fitBounds(geojson.getBounds());
+      })
+      .catch(err => {
+        console.warn("Modo Demo Activado");
+        // Datos Mock para visualización
+        const mockData = {
+            "type": "FeatureCollection",
+            "features": [
+                { "type": "Feature", "properties": { "distrito": "LIMA", "ubigeo": "150101", "mef_zip_url": "https://www.mef.gob.pe/" }, "geometry": { "type": "Polygon", "coordinates": [[[-77.045, -12.045], [-77.025, -12.045], [-77.025, -12.065], [-77.045, -12.065], [-77.045, -12.045]]] } },
+                { "type": "Feature", "properties": { "distrito": "MIRAFLORES", "ubigeo": "150122", "mef_zip_url": "https://www.mef.gob.pe/" }, "geometry": { "type": "Polygon", "coordinates": [[[-77.020, -12.110], [-77.045, -12.110], [-77.045, -12.135], [-77.020, -12.135], [-77.020, -12.110]]] } }
+            ]
+        };
+        geojson = L.geoJSON(mockData, { style, onEachFeature }).addTo(map);
+        
+        const warning = document.createElement('div');
+        warning.className = "absolute bottom-24 md:bottom-5 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg z-[2000] flex items-center gap-2 pointer-events-none";
+        warning.innerHTML = "<i class='fa-solid fa-info-circle'></i> Modo Demo: Cargando datos de prueba";
+        document.body.appendChild(warning);
+      });
+
+  </script>
+</body>
+</html>
